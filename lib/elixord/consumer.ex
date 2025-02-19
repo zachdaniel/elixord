@@ -1,18 +1,9 @@
 defmodule Elixord.Consumer do
   use Nostrum.Consumer
-  @guilds [711_271_361_523_351_632, 1_316_767_506_400_280_628]
+  # @guilds [711_271_361_523_351_632, 1_316_767_506_400_280_628]
 
   import Bitwise
 
-  # @commands [
-  #   GG.Tricks.Backflip,
-  #   GG.Tricks.Apple
-  # ]
-  #
-  # @listeners [GG.Actors.Apollonius, GG.Actors.Sevro, GG.Actors.Ephraim, GG.Actors.Mustang]
-  #
-  # require Logger
-  #
   def handle_event({:READY, _msg, _ws_state}) do
     options = [
       %{
@@ -34,14 +25,6 @@ defmodule Elixord.Consumer do
       description: "Search hexdocs",
       options: options
     })
-
-    for guild <- @guilds do
-      Nostrum.Api.ApplicationCommand.create_guild_command(guild, %{
-        name: "hexdocs",
-        description: "Search hexdocs",
-        options: options
-      })
-    end
 
     IO.puts("READY")
   end
@@ -160,28 +143,4 @@ defmodule Elixord.Consumer do
     |> Map.get(:pre)
     |> Enum.any?()
   end
-
-  # defp highlights(hit) do
-  #   highlights = hit["highlights"] || hit["highlight"]
-  #
-  #   if highlights && !Enum.empty?(highlights) do
-  #     do_highlights(highlights)
-  #   else
-  #     ""
-  #   end
-  # end
-  #
-  # defp do_highlights(highlights) do
-  #   "\n" <>
-  #     Enum.map_join(highlights, fn highlight ->
-  #       "  " <>
-  #         Enum.map_join(String.split(replace_marks(highlight["snippet"]), "\n"), "\n", &"  #{&1}")
-  #     end)
-  # end
-
-  # defp replace_marks(snippet) do
-  #   snippet
-  #   |> String.replace("<mark>", "**")
-  #   |> String.replace("</mark>", "**")
-  # end
 end
