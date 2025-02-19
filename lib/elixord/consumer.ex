@@ -1,6 +1,6 @@
 defmodule Elixord.Consumer do
   use Nostrum.Consumer
-  @ash_guild 711_271_361_523_351_632
+  @guilds [711_271_361_523_351_632, 1_316_767_506_400_280_628]
 
   # @commands [
   #   GG.Tricks.Backflip,
@@ -12,7 +12,7 @@ defmodule Elixord.Consumer do
   # require Logger
   #
   def handle_event({:READY, _msg, _ws_state}) do
-    Nostrum.Api.ApplicationCommand.create_guild_command(@ash_guild, %{
+    Nostrum.Api.ApplicationCommand.create_global_command(%{
       name: "hexdocs",
       description: "Search hexdocs",
       options: [
@@ -25,6 +25,22 @@ defmodule Elixord.Consumer do
         %{name: "query", type: 3, required: true, description: "What to search for on hexdocs"}
       ]
     })
+
+    for guild <- @guilds do
+      Nostrum.Api.ApplicationCommand.create_guild_command(guild, %{
+        name: "hexdocs",
+        description: "Search hexdocs",
+        options: [
+          %{
+            name: "packages",
+            type: 3,
+            required: true,
+            description: "A comma separated list of packages to search"
+          },
+          %{name: "query", type: 3, required: true, description: "What to search for on hexdocs"}
+        ]
+      })
+    end
 
     IO.puts("READY")
   end
