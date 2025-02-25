@@ -1,8 +1,9 @@
 defmodule Elixord.Consumer do
   use Nostrum.Consumer
-  # @guilds [711_271_361_523_351_632, 1_316_767_506_400_280_628]
+  # @ash_guild 711_271_361_523_351_632
 
   import Bitwise
+  require Logger
 
   def handle_event({:READY, _msg, _ws_state}) do
     options = [
@@ -12,12 +13,7 @@ defmodule Elixord.Consumer do
         required: true,
         description: "A comma separated list of packages to search"
       },
-      %{name: "query", type: 3, required: true, description: "What to search for on hexdocs"},
-      %{
-        name: "public",
-        type: 5,
-        description: "Show the results to the whole channel"
-      }
+      %{name: "query", type: 3, required: true, description: "What to search for on hexdocs"}
     ]
 
     Nostrum.Api.ApplicationCommand.create_global_command(%{
@@ -26,14 +22,38 @@ defmodule Elixord.Consumer do
       options: options
     })
 
-    IO.puts("READY")
+    Logger.info("READY")
+  end
+
+  def handle_event({
+        :INTERACTION_CREATE,
+        %Nostrum.Struct.Interaction{
+          # channel_id: channel_id,
+          data: %Nostrum.Struct.ApplicationCommandInteractionData{custom_id: "share_to_channel"},
+          member: %Nostrum.Struct.Guild.Member{nick: nick},
+          message: %Nostrum.Struct.Message{
+            # channel_id: channel_id,
+            content: content
+          }
+        } = interaction,
+        _ws_state
+      }) do
+    Nostrum.Api.create_interaction_response(interaction, %{
+      type: 4,
+      data: %{
+        content: "### #{nick} shared search results:\n\n#{content}"
+      }
+    })
+
+    :ok
   end
 
   def handle_event(
         {:INTERACTION_CREATE,
-         %Nostrum.Struct.Interaction{data: %{name: "hexdocs", options: options}} = interaction,
+         %Nostrum.Struct.Interaction{data: %{name: name, options: options}} = interaction,
          _ws_state}
-      ) do
+      )
+      when name in ["hexdocs", "hexdocs_testing"] do
     packages =
       Enum.find(options, &(&1.name == "packages")).value
       |> String.split(",", trim: true)
@@ -62,12 +82,6 @@ defmodule Elixord.Consumer do
 
     query = Enum.find(options, &(&1.name == "query")).value
 
-    public =
-      case Enum.find(options, &(&1.name == "public")) do
-        %{value: value} -> value
-        _ -> false
-      end
-
     params = %{
       q: query,
       filter_by: "package:=[#{Enum.join(packages, ",")}]",
@@ -85,47 +99,27 @@ defmodule Elixord.Consumer do
       "- [#{hit["document"]["type"]} | #{hit["document"]["title"]}](https://hexdocs.pm/#{url}/#{hit["document"]["ref"]})"
     end)
     |> then(fn result ->
-      flags =
-        if public do
-          1
-        else
-          1 <<< 6
-        end
-
       Nostrum.Api.create_interaction_response(interaction, %{
         type: 4,
         data: %{
-          flags: flags,
-          content: "Searched #{Enum.join(packages, ", ")} for #{query}:\n" <> result
+          flags: 1 <<< 6,
+          content: "Searched `#{Enum.join(packages, ", ")}` for `#{query}`:\n" <> result,
+          components: [
+            Nostrum.Struct.Component.ActionRow.action_row()
+            |> Nostrum.Struct.Component.ActionRow.append(
+              Nostrum.Struct.Component.Button.interaction_button(
+                "Share to Channel",
+                "share_to_channel"
+              )
+            )
+          ]
         }
       })
     end)
   end
 
-  def handle_event(other) do
-    IO.inspect(other, label: "no known event")
+  def handle_event(_other) do
     :ok
-  end
-
-  defp split_into_chunks(strings, max_length) do
-    strings
-    |> Enum.reduce({[], ""}, fn string, {chunks, current_chunk} ->
-      new_chunk = current_chunk <> "\n" <> string
-
-      if String.length(new_chunk) > max_length and current_chunk != "" do
-        {[current_chunk | chunks], string}
-      else
-        {chunks, new_chunk}
-      end
-    end)
-    |> then(fn {chunks, last_chunk} ->
-      if last_chunk != "" do
-        [last_chunk | chunks]
-      else
-        chunks
-      end
-    end)
-    |> Enum.reverse()
   end
 
   defp first_non_rc_version_or_first_version(releases, body) do
