@@ -13,7 +13,14 @@ defmodule Elixord.Consumer do
         required: true,
         description: "A comma separated list of packages to search"
       },
-      %{name: "query", type: 3, required: true, description: "What to search for on hexdocs"}
+      %{name: "query", type: 3, required: true, description: "What to search for on hexdocs"},
+      %{
+        name: "limit",
+        type: 4,
+        description: "The max number of results to show. Default 5.",
+        min_value: 1,
+        max_value: 20
+      }
     ]
 
     Nostrum.Api.ApplicationCommand.create_global_command(%{
@@ -80,6 +87,14 @@ defmodule Elixord.Consumer do
         end
       end)
 
+    limit =
+      Enum.find_value(options, 5, fn option ->
+        if option.name == "limit" do
+          option.value
+        end
+      end)
+      |> min(20)
+
     query = Enum.find(options, &(&1.name == "query")).value
 
     params = %{
@@ -93,6 +108,7 @@ defmodule Elixord.Consumer do
     )
     |> Map.get(:body)
     |> Map.get("hits")
+    |> Enum.take(limit)
     |> Enum.map_join("\n", fn hit ->
       url = Enum.join(String.split(hit["document"]["package"], "-"), "/")
 
