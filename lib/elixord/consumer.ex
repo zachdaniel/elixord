@@ -108,6 +108,7 @@ defmodule Elixord.Consumer do
     )
     |> Map.get(:body)
     |> Map.get("hits")
+    |> Enum.uniq_by(&Map.take(&1["document"], ["title", "ref"]))
     |> Enum.take(limit)
     |> Enum.map_join("\n", fn hit ->
       url = Enum.join(String.split(hit["document"]["package"], "-"), "/")
