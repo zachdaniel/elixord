@@ -4,6 +4,7 @@ defmodule Elixord.Consumer do
 
   import Bitwise
   require Logger
+  import Nostrum.Struct.Embed
 
   def handle_event({:READY, _msg, _ws_state}) do
     options = [
@@ -17,7 +18,7 @@ defmodule Elixord.Consumer do
       %{
         name: "limit",
         type: 4,
-        description: "The max number of results to show. Default 5.",
+        description: "The max number of results to show. Default 6.",
         min_value: 1,
         max_value: 20
       }
@@ -35,12 +36,9 @@ defmodule Elixord.Consumer do
   def handle_event({
         :INTERACTION_CREATE,
         %Nostrum.Struct.Interaction{
-          # channel_id: channel_id,
           data: %Nostrum.Struct.ApplicationCommandInteractionData{custom_id: "share_to_channel"},
-          member: %Nostrum.Struct.Guild.Member{nick: nick},
           message: %Nostrum.Struct.Message{
-            # channel_id: channel_id,
-            content: content
+            embeds: embeds
           }
         } = interaction,
         _ws_state
@@ -48,7 +46,7 @@ defmodule Elixord.Consumer do
     Nostrum.Api.create_interaction_response(interaction, %{
       type: 4,
       data: %{
-        content: "### #{nick} shared search results:\n\n#{content}"
+        embeds: embeds
       }
     })
 
@@ -88,12 +86,12 @@ defmodule Elixord.Consumer do
       end)
 
     limit =
-      Enum.find_value(options, 5, fn option ->
+      Enum.find_value(options, 6, fn option ->
         if option.name == "limit" do
           option.value
         end
       end)
-      |> min(20)
+      |> min(6)
 
     query = Enum.find(options, &(&1.name == "query")).value
 
@@ -110,17 +108,45 @@ defmodule Elixord.Consumer do
     |> Map.get("hits")
     |> Enum.uniq_by(&Map.take(&1["document"], ["title", "ref"]))
     |> Enum.take(limit)
-    |> Enum.map_join("\n", fn hit ->
-      url = Enum.join(String.split(hit["document"]["package"], "-"), "/")
+    |> then(fn hits ->
+      package_count = Enum.count(packages)
 
-      "- [#{hit["document"]["type"]} | #{hit["document"]["title"]}](https://hexdocs.pm/#{url}/#{hit["document"]["ref"]})"
-    end)
-    |> then(fn result ->
+      embed =
+        %Nostrum.Struct.Embed{}
+        |> put_title("Hexdocs Search Results")
+        |> put_description("Searched `#{Enum.join(packages, ", ")}` for `#{query}`")
+        |> then(fn embed ->
+          Enum.reduce(hits, embed, fn
+            :split, embed ->
+              put_field(
+                embed,
+                "\t",
+                "\t"
+              )
+
+            hit, embed ->
+              title =
+                if package_count > 1 do
+                  "#{hit["document"]["package"]} | "
+                else
+                  ""
+                end
+
+              url = Enum.join(String.split(hit["document"]["package"], "-"), "/")
+
+              put_field(
+                embed,
+                "#{title}#{hit["document"]["type"]}",
+                "[#{hit["document"]["title"]}](https://hexdocs.pm/#{url}/#{hit["document"]["ref"]})"
+              )
+          end)
+        end)
+
       Nostrum.Api.create_interaction_response(interaction, %{
         type: 4,
         data: %{
           flags: 1 <<< 6,
-          content: "Searched `#{Enum.join(packages, ", ")}` for `#{query}`:\n" <> result,
+          embeds: [embed],
           components: [
             Nostrum.Struct.Component.ActionRow.action_row()
             |> Nostrum.Struct.Component.ActionRow.append(
