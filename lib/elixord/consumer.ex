@@ -2,19 +2,21 @@ defmodule Elixord.Consumer do
   use Nostrum.Consumer
   # @ash_guild 711_271_361_523_351_632
 
+  @testing_guild 1_344_320_373_508_014_172
+  @gleam_servers [768_594_524_158_427_167]
+
   import Bitwise
   require Logger
   import Nostrum.Struct.Embed
 
   def handle_event({:READY, _msg, _ws_state}) do
     options = [
+      %{name: "query", type: 3, required: true, description: "What to search for on hexdocs"},
       %{
         name: "packages",
         type: 3,
-        required: true,
         description: "A comma separated list of packages to search"
       },
-      %{name: "query", type: 3, required: true, description: "What to search for on hexdocs"},
       %{
         name: "limit",
         type: 4,
@@ -24,11 +26,19 @@ defmodule Elixord.Consumer do
       }
     ]
 
-    Nostrum.Api.ApplicationCommand.create_global_command(%{
-      name: "hexdocs",
-      description: "Search hexdocs",
-      options: options
-    })
+    if Application.get_env(:elixord, :testing) do
+      Nostrum.Api.ApplicationCommand.create_guild_command(@testing_guild, %{
+        name: "hexdocs_test",
+        description: "Search hexdocs",
+        options: options
+      })
+    else
+      Nostrum.Api.ApplicationCommand.create_global_command(%{
+        name: "hexdocs",
+        description: "Search hexdocs",
+        options: options
+      })
+    end
 
     Logger.info("READY")
   end
@@ -55,34 +65,46 @@ defmodule Elixord.Consumer do
 
   def handle_event(
         {:INTERACTION_CREATE,
-         %Nostrum.Struct.Interaction{data: %{name: name, options: options}} = interaction,
-         _ws_state}
+         %Nostrum.Struct.Interaction{data: %{name: name, options: options}, guild_id: guild_id} =
+           interaction, _ws_state}
       )
-      when name in ["hexdocs", "hexdocs_testing"] do
+      when name in ["hexdocs", "hexdocs_test"] do
+    default =
+      if guild_id in @gleam_servers do
+        "gleam_stdlib"
+      else
+        "elixir"
+      end
+
     packages =
-      Enum.find(options, &(&1.name == "packages")).value
+      Enum.find(options, %{value: default}, &(&1.name == "packages")).value
       |> String.split(",", trim: true)
       |> Enum.map(&String.trim/1)
       |> Enum.reject(&(&1 == ""))
-      |> Enum.flat_map(fn package ->
-        case String.split(package, "-") do
-          [package] ->
-            case Req.get("https://hex.pm/api/packages/#{package}",
-                   headers: [{"User-Agent", "igniter-installer"}]
-                 ) do
-              {:ok, %{body: %{"releases" => releases} = body}} ->
-                case first_non_rc_version_or_first_version(releases, body) do
-                  %{"version" => version} ->
-                    ["#{package}-#{version}"]
+      |> Enum.flat_map(fn
+        "elixir" ->
+          # todo automate this
+          ["elixir-1.18.1"]
 
-                  _ ->
-                    []
-                end
-            end
+        package ->
+          case String.split(package, "-") do
+            [package] ->
+              case Req.get("https://hex.pm/api/packages/#{package}",
+                     headers: [{"User-Agent", "igniter-installer"}]
+                   ) do
+                {:ok, %{body: %{"releases" => releases} = body}} ->
+                  case first_non_rc_version_or_first_version(releases, body) do
+                    %{"version" => version} ->
+                      ["#{package}-#{version}"]
 
-          _ ->
-            [package]
-        end
+                    _ ->
+                      []
+                  end
+              end
+
+            _ ->
+              [package]
+          end
       end)
 
     limit =
@@ -150,14 +172,18 @@ defmodule Elixord.Consumer do
         }
       })
     end)
-  end
-
-  defp split_on_space_dash(text) do
-    String.replace(text, " - ", "\n")
+  rescue
+    e ->
+      Logger.error(Exception.format(:error, e, __STACKTRACE__))
+      reraise e, __STACKTRACE__
   end
 
   def handle_event(_other) do
     :ok
+  end
+
+  defp split_on_space_dash(text) do
+    String.replace(text, " - ", "\n")
   end
 
   defp first_non_rc_version_or_first_version(releases, body) do
