@@ -109,12 +109,10 @@ defmodule Elixord.Consumer do
     |> Enum.uniq_by(&Map.take(&1["document"], ["title", "ref"]))
     |> Enum.take(limit)
     |> then(fn hits ->
-      package_count = Enum.count(packages)
-
       embed =
         %Nostrum.Struct.Embed{}
         |> put_title("Hexdocs Search Results")
-        |> put_description("Searched `#{Enum.join(packages, ", ")}` for `#{query}`")
+        |> put_description("Searched `#{Enum.join(packages, ",")}` for `#{query}`")
         |> then(fn embed ->
           Enum.reduce(hits, embed, fn
             :split, embed ->
@@ -125,19 +123,12 @@ defmodule Elixord.Consumer do
               )
 
             hit, embed ->
-              title =
-                if package_count > 1 do
-                  "#{hit["document"]["package"]} | "
-                else
-                  ""
-                end
-
               url = Enum.join(String.split(hit["document"]["package"], "-"), "/")
 
               put_field(
                 embed,
-                "#{title}#{hit["document"]["type"]}",
-                "[#{hit["document"]["title"]}](https://hexdocs.pm/#{url}/#{hit["document"]["ref"]})"
+                "#{hit["document"]["package"]} | #{hit["document"]["type"]}",
+                "[#{split_on_space_dash(hit["document"]["title"])}](https://hexdocs.pm/#{url}/#{hit["document"]["ref"]})"
               )
           end)
         end)
@@ -159,6 +150,10 @@ defmodule Elixord.Consumer do
         }
       })
     end)
+  end
+
+  defp split_on_space_dash(text) do
+    String.replace(text, " - ", "\n")
   end
 
   def handle_event(_other) do
